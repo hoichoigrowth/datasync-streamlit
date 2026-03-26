@@ -85,12 +85,15 @@ def digits_only(s):
 def find_header_row(df_raw):
     """Scan first 10 rows for a row that looks like headers."""
     limit = min(len(df_raw), 10)
+    best_idx = 0
+    best_score = 0
     for i in range(limit):
         row_vals = [str(v).strip() for v in df_raw.iloc[i]]
-        matches = sum(1 for v in row_vals if any(p.match(v) for p in HEADER_PATTERNS))
-        if matches >= 1:
-            return i
-    return 0
+        score = sum(1 for v in row_vals if any(p.match(v) for p in HEADER_PATTERNS))
+        if score > best_score:
+            best_score = score
+            best_idx = i
+    return best_idx
 
 
 def phone_to_int_str(val):
@@ -308,14 +311,27 @@ if uploaded_file:
     with st.spinner("Parsing file..."):
         df, parse_info = parse_file(uploaded_file)
 
-    st.success(f"**{uploaded_file.name}** — {parse_info}")
+    if df.empty:
+        st.error(f"⚠️ Could not read data rows. Debug info: {parse_info}")
+        # Show raw file preview for debugging
+        try:
+            uploaded_file.seek(0)
+            raw_bytes2 = uploaded_file.read()
+            df_debug = pd.read_csv(io.BytesIO(raw_bytes2), header=None, dtype=str,
+                                   keep_default_na=False, on_bad_lines="skip",
+                                   engine="python", nrows=10)
+            st.write("**Raw file (first 10 rows):**")
+            st.dataframe(df_debug, use_container_width=True)
+        except Exception as e:
+            st.write(f"Raw preview failed: {e}")
+    else:
+        st.success(f"✅ **{uploaded_file.name}** — {parse_info}")
 
-    if not df.empty:
         # Preview
         with st.expander(f"📋 Preview (first 10 of {len(df)} rows)", expanded=True):
             st.dataframe(df.head(10), use_container_width=True)
 
-        # Process button
+        # Process button — always visible once file is loaded
         if st.button("🚀 Process Data", type="primary", use_container_width=True):
             with st.spinner("Processing..."):
                 final_df, stats, country_split, currency_split = process_data(
