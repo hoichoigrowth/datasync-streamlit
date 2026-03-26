@@ -121,9 +121,29 @@ def parse_file(uploaded_file):
 
     # Read as raw (no header)
     if name.endswith(".csv"):
-        df_raw = pd.read_csv(io.BytesIO(raw_bytes), header=None, dtype=str, keep_default_na=False)
+        # Try encodings in order, skip bad lines, use python engine as fallback
+        df_raw = None
+        for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]:
+            try:
+                df_raw = pd.read_csv(
+                    io.BytesIO(raw_bytes),
+                    header=None,
+                    dtype=str,
+                    keep_default_na=False,
+                    encoding=enc,
+                    on_bad_lines="skip",
+                    engine="python",
+                )
+                break
+            except Exception:
+                continue
+        if df_raw is None:
+            return pd.DataFrame(), "Could not parse CSV — try saving as UTF-8"
     else:
-        df_raw = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="openpyxl")
+        try:
+            df_raw = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="openpyxl")
+        except Exception:
+            df_raw = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="xlrd")
         df_raw = df_raw.fillna("")
 
     if df_raw.empty:
