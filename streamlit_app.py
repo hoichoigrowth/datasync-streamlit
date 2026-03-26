@@ -1,6 +1,5 @@
 """
-DataSync Pro – Streamlit App
-PI Data Processing for Targeting
+DataSync Pro — PI Data Processing for Targeting
 """
 
 import streamlit as st
@@ -10,56 +9,59 @@ import re
 import io
 from collections import defaultdict
 
-# ── Page config ──────────────────────────────────────────────────
-st.set_page_config(page_title="DataSync Pro", page_icon="📊", layout="wide")
+# ── Page config ───────────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="DataSync Pro",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-# ── Reference data ───────────────────────────────────────────────
+st.markdown("""
+<style>
+    #MainMenu, footer, header {visibility: hidden;}
+    .block-container {padding-top: 2rem; padding-bottom: 2rem;}
+    .section-title {font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;}
+    .stDataFrame {border-radius: 8px; overflow: hidden;}
+    div[data-testid="stHorizontalBlock"] > div {gap: 1rem;}
+</style>
+""", unsafe_allow_html=True)
+
+# ── Reference data ────────────────────────────────────────────────────────────
 COUNTRY_INFO = {
-    "1":   {"name": "USA/Canada",      "length": 10},
-    "44":  {"name": "United Kingdom",   "length": 10},
-    "60":  {"name": "Malaysia",         "length": 9},
-    "65":  {"name": "Singapore",        "length": 8},
-    "971": {"name": "UAE",              "length": 9},
-    "966": {"name": "Saudi Arabia",     "length": 9},
-    "61":  {"name": "Australia",        "length": 9},
-    "91":  {"name": "India",            "length": 10},
-    "880": {"name": "Bangladesh",       "length": 8},
+    "1":   {"name": "USA/Canada",     "length": 10},
+    "44":  {"name": "UK",             "length": 10},
+    "60":  {"name": "Malaysia",       "length": 9},
+    "65":  {"name": "Singapore",      "length": 8},
+    "971": {"name": "UAE",            "length": 9},
+    "966": {"name": "Saudi Arabia",   "length": 9},
+    "61":  {"name": "Australia",      "length": 9},
+    "91":  {"name": "India",          "length": 10},
+    "880": {"name": "Bangladesh",     "length": 8},
 }
 
 CURRENCY_MAP = {
-    "USD": {"code": "1",   "length": 10, "name": "US Dollar"},
-    "GBP": {"code": "44",  "length": 10, "name": "British Pound"},
-    "MYR": {"code": "60",  "length": 9,  "name": "Malaysian Ringgit"},
-    "SGD": {"code": "65",  "length": 8,  "name": "Singapore Dollar"},
-    "AED": {"code": "971", "length": 9,  "name": "UAE Dirham"},
-    "SAR": {"code": "966", "length": 9,  "name": "Saudi Riyal"},
-    "AUD": {"code": "61",  "length": 9,  "name": "Australian Dollar"},
-    "CAD": {"code": "1",   "length": 10, "name": "Canadian Dollar"},
-    "INR": {"code": "91",  "length": 10, "name": "Indian Rupee"},
-    "BDT": {"code": "880", "length": 8,  "name": "Bangladeshi Taka"},
+    "USD": {"code": "1",   "length": 10},
+    "GBP": {"code": "44",  "length": 10},
+    "MYR": {"code": "60",  "length": 9},
+    "SGD": {"code": "65",  "length": 8},
+    "AED": {"code": "971", "length": 9},
+    "SAR": {"code": "966", "length": 9},
+    "AUD": {"code": "61",  "length": 9},
+    "CAD": {"code": "1",   "length": 10},
+    "INR": {"code": "91",  "length": 10},
+    "BDT": {"code": "880", "length": 8},
 }
 
-ALL_MARKETS = list(CURRENCY_MAP.keys())
-
-# ── Helpers ──────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 DIGITS_RE = re.compile(r"\D")
 
-# Patterns to find the header row
-HEADER_PATTERNS = [
-    re.compile(r"^e[\-_\s]?mail", re.I),
-    re.compile(r"^phone", re.I),
-    re.compile(r"^mobile", re.I),
-    re.compile(r"^currency", re.I),
-]
-
-# Normalize column names
 COLUMN_NORMALIZE = [
-    (re.compile(r"^e[\-_\s]?mail[\s_\-]*(address|id)?$", re.I), "Email"),
-    (re.compile(r"^(phone|mobile|cell|contact)[\s_\-]*(number|no|num)?$", re.I), "Phone"),
-    (re.compile(r"^currency[\s_\-]*(code)?$", re.I), "currency"),
+    (re.compile(r"^e[\-_\s]?mail.*$", re.I), "Email"),
+    (re.compile(r"^(phone|mobile|cell|contact).*$", re.I), "Phone"),
+    (re.compile(r"^currency.*$", re.I), "currency"),
 ]
-
 
 def normalize_col(name):
     s = str(name).strip()
@@ -68,36 +70,17 @@ def normalize_col(name):
             return norm
     return s
 
-
 def is_valid_email(e):
     return bool(e) and EMAIL_RE.match(str(e).strip()) is not None
-
 
 def is_internal(e):
     lo = str(e).lower()
     return lo.endswith("@hoichoi.tv") or lo.endswith("@hoichoitv.com")
 
-
 def digits_only(s):
     return DIGITS_RE.sub("", str(s) if pd.notna(s) else "")
 
-
-def find_header_row(df_raw):
-    """Scan first 10 rows for a row that looks like headers."""
-    limit = min(len(df_raw), 10)
-    best_idx = 0
-    best_score = 0
-    for i in range(limit):
-        row_vals = [str(v).strip() for v in df_raw.iloc[i]]
-        score = sum(1 for v in row_vals if any(p.match(v) for p in HEADER_PATTERNS))
-        if score > best_score:
-            best_score = score
-            best_idx = i
-    return best_idx
-
-
 def phone_to_int_str(val):
-    """Convert phone value to integer string (0 decimals). Handles scientific notation."""
     if pd.isna(val) or str(val).strip() == "":
         return ""
     s = str(val).strip()
@@ -109,298 +92,288 @@ def phone_to_int_str(val):
     except (ValueError, TypeError):
         return s
 
-
-# ── File parser ──────────────────────────────────────────────────
-def parse_file(uploaded_file):
-    """
-    Parse uploaded CSV/XLSX:
-    1. Auto-detect header row
-    2. Normalize column names
-    3. Convert Phone to integer strings
-    """
+# ── File reading (raw, no processing) ────────────────────────────────────────
+def read_raw(uploaded_file):
     name = uploaded_file.name.lower()
     raw_bytes = uploaded_file.read()
     uploaded_file.seek(0)
 
-    # Read as raw (no header)
     if name.endswith(".csv"):
-        # Try encodings in order, skip bad lines, use python engine as fallback
-        df_raw = None
-        for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]:
+        for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
             try:
-                df_raw = pd.read_csv(
-                    io.BytesIO(raw_bytes),
-                    header=None,
-                    dtype=str,
-                    keep_default_na=False,
-                    encoding=enc,
-                    on_bad_lines="skip",
-                    engine="python",
+                df = pd.read_csv(
+                    io.BytesIO(raw_bytes), header=None, dtype=str,
+                    keep_default_na=False, encoding=enc,
+                    on_bad_lines="skip", engine="python",
                 )
-                break
+                return df
             except Exception:
                 continue
-        if df_raw is None:
-            return pd.DataFrame(), "Could not parse CSV — try saving as UTF-8"
     else:
         try:
-            df_raw = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="openpyxl")
+            df = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="openpyxl")
         except Exception:
-            df_raw = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="xlrd")
-        df_raw = df_raw.fillna("")
+            df = pd.read_excel(io.BytesIO(raw_bytes), header=None, dtype=str, engine="xlrd")
+        return df.fillna("")
+    return pd.DataFrame()
 
-    if df_raw.empty:
-        return pd.DataFrame(), "File is empty"
+# ── Apply header + skip settings ─────────────────────────────────────────────
+def apply_header(df_raw, skip_rows, header_row):
+    """
+    skip_rows: number of rows to drop from top (0 = keep all)
+    header_row: which row (after skipping) to use as headers (1-indexed)
+    """
+    df = df_raw.copy()
+    # Drop junk rows from top
+    df = df.iloc[skip_rows:].reset_index(drop=True)
+    if len(df) == 0:
+        return pd.DataFrame(), []
 
-    # Row 0 = junk → always delete it
-    # Row 1 = real headers → always use it
-    if len(df_raw) < 2:
-        return pd.DataFrame(), "File has fewer than 2 rows"
+    # header_row is 1-indexed; convert to 0-indexed
+    h_idx = header_row - 1
+    if h_idx >= len(df):
+        return pd.DataFrame(), []
 
-    headers = [normalize_col(v) for v in df_raw.iloc[1]]
-    df = df_raw.iloc[2:].reset_index(drop=True)
-    df.columns = headers
+    raw_headers = [str(v).strip() for v in df.iloc[h_idx]]
+    headers = [normalize_col(v) for v in raw_headers]
 
-    # Drop fully empty rows
-    df = df.dropna(how="all")
-    df = df[df.apply(lambda row: any(str(v).strip() != "" for v in row), axis=1)]
+    data = df.iloc[h_idx + 1:].reset_index(drop=True)
+    data.columns = headers
 
-    # Convert Phone to integer string
-    if "Phone" in df.columns:
-        df["Phone"] = df["Phone"].apply(phone_to_int_str)
+    # Drop blank rows
+    data = data[data.apply(lambda r: any(str(v).strip() != "" for v in r), axis=1)]
 
-    info = f"Header found at row {header_idx + 1}. Columns: {', '.join(headers)}. {len(df)} data rows."
-    return df, info
+    # Phone → integer string
+    if "Phone" in data.columns:
+        data["Phone"] = data["Phone"].apply(phone_to_int_str)
 
+    return data, headers
 
-# ── Processing logic ─────────────────────────────────────────────
-def process_internal(rows):
-    results = []
-    sorted_codes = sorted(COUNTRY_INFO.items(), key=lambda x: -len(x[0]))
-    for _, row in rows.iterrows():
-        email = str(row.get("Email", "")).strip()
-        if not is_valid_email(email) or not is_internal(email):
-            continue
-        phone_part = email.split("@")[0].strip()
-        formatted = phone_part
-        if phone_part.startswith("+"):
-            for code, info in sorted_codes:
-                if phone_part[1:].startswith(code):
-                    number_part = digits_only(phone_part[1 + len(code):])
-                    if number_part:
-                        formatted = f"{code} {number_part[-info['length']:]}"
-                    break
-        results.append({"Email": email, "Phone": formatted})
-    return results
-
-
-def process_external(rows, markets):
-    results = []
-    market_set = set(markets) if markets else None
-    for _, row in rows.iterrows():
-        email = str(row.get("Email", "")).strip()
-        if not is_valid_email(email) or is_internal(email):
-            continue
-        raw_phone = digits_only(row.get("Phone", ""))
-        if len(raw_phone) < 5:
-            continue
-        currency = str(row.get("currency", "")).strip()
-        if market_set and currency not in market_set:
-            continue
-        mapping = CURRENCY_MAP.get(currency)
-        if not mapping:
-            continue
-        phone = raw_phone
-        if phone.startswith(mapping["code"]):
-            phone = phone[len(mapping["code"]):]
-        formatted = f"{mapping['code']} {phone[:mapping['length']]}"
-        results.append({"Email": email, "Phone": formatted})
-    return results
-
-
+# ── Processing logic ──────────────────────────────────────────────────────────
 def process_data(df, markets, lowercase_emails=True):
     if df.empty:
-        return pd.DataFrame(), {}, [], []
+        return pd.DataFrame(), {}, {}, {}
 
+    df = df.copy()
     if lowercase_emails and "Email" in df.columns:
-        df = df.copy()
         df["Email"] = df["Email"].str.lower()
 
-    internal = process_internal(df)
-    external = process_external(df, markets)
-    all_rows = internal + external
+    internal, external = [], []
+    sorted_codes = sorted(COUNTRY_INFO.items(), key=lambda x: -len(x[0]))
+
+    for _, row in df.iterrows():
+        email = str(row.get("Email", "")).strip()
+        if not is_valid_email(email):
+            continue
+        if is_internal(email):
+            part = email.split("@")[0].strip()
+            fmt = part
+            if part.startswith("+"):
+                for code, info in sorted_codes:
+                    if part[1:].startswith(code):
+                        num = digits_only(part[1 + len(code):])
+                        if num:
+                            fmt = f"{code} {num[-info['length']:]}"
+                        break
+            internal.append({"Email": email, "Phone": fmt})
+        else:
+            raw_phone = digits_only(row.get("Phone", ""))
+            if len(raw_phone) < 5:
+                continue
+            currency = str(row.get("currency", "")).strip()
+            if markets and currency not in markets:
+                continue
+            mapping = CURRENCY_MAP.get(currency)
+            if not mapping:
+                continue
+            phone = raw_phone
+            if phone.startswith(mapping["code"]):
+                phone = phone[len(mapping["code"]):]
+            external.append({"Email": email, "Phone": f"{mapping['code']} {phone[:mapping['length']]}"})
 
     # Deduplicate
-    seen = set()
-    deduped = []
-    for r in all_rows:
+    seen, deduped = set(), []
+    for r in internal + external:
         key = f"{r['Email']}|{r['Phone']}"
-        if key in seen or not r.get("Phone", "").strip():
-            continue
-        seen.add(key)
-        deduped.append(r)
+        if key not in seen and r.get("Phone", "").strip():
+            seen.add(key)
+            deduped.append(r)
 
     # Group by email
     grouped = defaultdict(list)
     for r in deduped:
         grouped[r["Email"]].append(r["Phone"])
 
-    final = [{"Email": em, "Phone": ", ".join(phs)} for em, phs in grouped.items()]
-    final_df = pd.DataFrame(final) if final else pd.DataFrame(columns=["Email", "Phone"])
+    final = pd.DataFrame(
+        [{"Email": e, "Phone": ", ".join(p)} for e, p in grouped.items()]
+    ) if grouped else pd.DataFrame(columns=["Email", "Phone"])
 
-    # Stats
     total = len(df)
-    valid_emails = df["Email"].apply(lambda e: is_valid_email(str(e).strip())).sum() if "Email" in df.columns else 0
-    valid_phones = df["Phone"].apply(lambda p: len(digits_only(p)) >= 5).sum() if "Phone" in df.columns else 0
-    internal_count = df["Email"].apply(lambda e: is_internal(str(e).strip())).sum() if "Email" in df.columns else 0
-
-    def pct(n, d):
-        return round((n / d) * 100, 1) if d else 0
+    ve = df["Email"].apply(lambda e: is_valid_email(str(e))).sum() if "Email" in df.columns else 0
+    vp = df["Phone"].apply(lambda p: len(digits_only(p)) >= 5).sum() if "Phone" in df.columns else 0
+    ic = df["Email"].apply(lambda e: is_internal(str(e))).sum() if "Email" in df.columns else 0
 
     stats = {
-        "Total Rows": total,
-        "Valid Emails": f"{valid_emails} ({pct(valid_emails, total)}%)",
-        "Valid Phones": f"{valid_phones} ({pct(valid_phones, total)}%)",
-        "Internal Emails": int(internal_count),
-        "Processed Records": len(final_df),
+        "Total Input Rows": total,
+        "Valid Emails": int(ve),
+        "Valid Phones": int(vp),
+        "Internal Emails": int(ic),
+        "Output Records": len(final),
     }
 
-    # Country split
     country_split = defaultdict(int)
     for r in deduped:
         code = r["Phone"].split(" ")[0]
-        name = COUNTRY_INFO.get(code, {}).get("name", "Unknown")
-        country_split[name] += 1
+        country_split[COUNTRY_INFO.get(code, {}).get("name", "Unknown")] += 1
 
-    # Currency split
     currency_split = defaultdict(int)
     if "currency" in df.columns:
-        for val in df["currency"]:
-            c = str(val).strip() or "Unknown"
-            currency_split[c] += 1
+        for v in df["currency"]:
+            currency_split[str(v).strip() or "Unknown"] += 1
 
-    return final_df, stats, dict(country_split), dict(currency_split)
+    return final, stats, dict(country_split), dict(currency_split)
 
-
-# ── UI ───────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    .stApp { background-color: #f8f9fa; }
-    .stat-card { background: white; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .stat-value { font-size: 28px; font-weight: 700; }
-    .stat-label { font-size: 13px; color: #6b7280; margin-top: 4px; }
-</style>
-""", unsafe_allow_html=True)
-
-# Header
-st.markdown("# 📊 DataSync Pro")
-st.markdown("**PI Data Processing for Targeting** — Upload your data, process phone numbers by market, and download clean results.")
+# ── UI ────────────────────────────────────────────────────────────────────────
+st.markdown("## 📊 DataSync Pro")
+st.markdown("PI Data Processing for Targeting")
 st.divider()
 
-# Sidebar options
-with st.sidebar:
-    st.header("⚙️ Processing Options")
-    selected_markets = st.multiselect("Select Markets", ALL_MARKETS, default=["INR", "BDT", "USD"])
-    lowercase_emails = st.checkbox("Lowercase emails", value=True)
-    st.divider()
-    st.caption("DataSync Pro v2.0 • Streamlit Edition")
-
-# File upload
-uploaded_file = st.file_uploader("📁 Upload CSV or Excel file", type=["csv", "xlsx", "xls"])
+# ─── STEP 1: Upload ────────────────────────────────────────────────────────
+st.markdown('<p class="section-title">① Upload File</p>', unsafe_allow_html=True)
+uploaded_file = st.file_uploader(
+    "Drop your CSV or Excel file here",
+    type=["csv", "xlsx", "xls"],
+    label_visibility="collapsed",
+)
 
 if uploaded_file:
-    with st.spinner("Parsing file..."):
-        df, parse_info = parse_file(uploaded_file)
+    df_raw = read_raw(uploaded_file)
+
+    if df_raw.empty:
+        st.error("Could not read the file. Try saving it as UTF-8 CSV.")
+        st.stop()
+
+    st.divider()
+
+    # ─── STEP 2: Configure rows ──────────────────────────────────────────
+    st.markdown('<p class="section-title">② Configure Rows</p>', unsafe_allow_html=True)
+
+    col_cfg1, col_cfg2, col_cfg3 = st.columns([1, 1, 2])
+    with col_cfg1:
+        skip_rows = st.number_input(
+            "Junk rows to skip from top",
+            min_value=0, max_value=max(0, len(df_raw) - 2),
+            value=min(1, max(0, len(df_raw) - 2)),
+            step=1,
+            help="How many rows at the top to throw away before the header"
+        )
+    with col_cfg2:
+        header_row = st.number_input(
+            "Header row (after skipping)",
+            min_value=1, max_value=max(1, len(df_raw) - int(skip_rows)),
+            value=1,
+            step=1,
+            help="Which row (counting from 1 after skipping) is the header"
+        )
+
+    df, headers = apply_header(df_raw, int(skip_rows), int(header_row))
+
+    # Raw preview (collapsible)
+    with st.expander("🔍 Raw file preview (first 10 rows)", expanded=False):
+        st.dataframe(df_raw.head(10), use_container_width=True, hide_index=True)
 
     if df.empty:
-        st.error(f"⚠️ Could not read data rows. Debug info: {parse_info}")
-        # Show raw file preview for debugging
-        try:
-            uploaded_file.seek(0)
-            raw_bytes2 = uploaded_file.read()
-            df_debug = pd.read_csv(io.BytesIO(raw_bytes2), header=None, dtype=str,
-                                   keep_default_na=False, on_bad_lines="skip",
-                                   engine="python", nrows=10)
-            st.write("**Raw file (first 10 rows):**")
-            st.dataframe(df_debug, use_container_width=True)
-        except Exception as e:
-            st.write(f"Raw preview failed: {e}")
-    else:
-        st.success(f"✅ **{uploaded_file.name}** — {parse_info}")
+        st.warning("No data rows found with current settings. Adjust the row configuration above.")
+        st.stop()
 
-        # Preview
-        with st.expander(f"📋 Preview (first 10 of {len(df)} rows)", expanded=True):
-            st.dataframe(df.head(10), use_container_width=True)
+    # Parsed preview
+    st.markdown(f"**Input Preview** — {len(df):,} rows · Columns: `{'`, `'.join(headers)}`")
+    st.dataframe(df.head(10), use_container_width=True, hide_index=True)
 
-        # Process button — always visible once file is loaded
-        if st.button("🚀 Process Data", type="primary", use_container_width=True):
-            with st.spinner("Processing..."):
-                final_df, stats, country_split, currency_split = process_data(
-                    df, selected_markets, lowercase_emails
-                )
+    st.divider()
 
-            st.session_state["result"] = final_df
-            st.session_state["stats"] = stats
-            st.session_state["country_split"] = country_split
-            st.session_state["currency_split"] = currency_split
+    # ─── STEP 3: Options + Process ──────────────────────────────────────
+    st.markdown('<p class="section-title">③ Processing Options</p>', unsafe_allow_html=True)
 
-    # Show results if they exist
-    if "result" in st.session_state and st.session_state["result"] is not None:
-        final_df = st.session_state["result"]
-        stats = st.session_state["stats"]
+    col_opt1, col_opt2 = st.columns([3, 1])
+    with col_opt1:
+        selected_markets = st.multiselect(
+            "Select markets to include",
+            list(CURRENCY_MAP.keys()),
+            default=["INR", "BDT", "USD"],
+        )
+    with col_opt2:
+        lowercase_emails = st.checkbox("Lowercase emails", value=True)
+
+    process_btn = st.button("🚀 Process Data", type="primary", use_container_width=True)
+
+    if process_btn:
+        with st.spinner("Processing..."):
+            final_df, stats, country_split, currency_split = process_data(
+                df, set(selected_markets), lowercase_emails
+            )
+        st.session_state["result"] = final_df
+        st.session_state["stats"] = stats
+        st.session_state["country_split"] = country_split
+        st.session_state["currency_split"] = currency_split
+
+    # ─── STEP 4: Results ─────────────────────────────────────────────────
+    if "result" in st.session_state and not st.session_state["result"].empty:
+        final_df      = st.session_state["result"]
+        stats         = st.session_state["stats"]
         country_split = st.session_state["country_split"]
-        currency_split = st.session_state["currency_split"]
+        currency_split= st.session_state["currency_split"]
 
         st.divider()
-        st.subheader("📈 Results")
+        st.markdown('<p class="section-title">④ Results</p>', unsafe_allow_html=True)
 
-        # Stat cards
+        # Stats row
         cols = st.columns(5)
+        colors = ["#6366f1", "#22c55e", "#3b82f6", "#f59e0b", "#ec4899"]
         for i, (label, value) in enumerate(stats.items()):
             with cols[i]:
-                st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-value">{value}</div>
-                    <div class="stat-label">{label}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.metric(label, f"{value:,}" if isinstance(value, int) else value)
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("")
 
         # Charts
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**🌍 Country Split**")
-            if country_split:
-                chart_df = pd.DataFrame(list(country_split.items()), columns=["Country", "Count"])
-                chart_df = chart_df.sort_values("Count", ascending=False)
-                st.bar_chart(chart_df.set_index("Country"))
-            else:
-                st.info("No country data")
+        if country_split or currency_split:
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                if country_split:
+                    cdf = pd.DataFrame(list(country_split.items()), columns=["Country", "Count"]).sort_values("Count", ascending=False)
+                    st.markdown("**Country split**")
+                    st.bar_chart(cdf.set_index("Country"), height=220)
+            with col_c2:
+                if currency_split:
+                    cudf = pd.DataFrame(list(currency_split.items()), columns=["Currency", "Count"]).sort_values("Count", ascending=False)
+                    st.markdown("**Currency split**")
+                    st.bar_chart(cudf.set_index("Currency"), height=220)
 
-        with col2:
-            st.markdown("**💱 Currency Distribution**")
-            if currency_split:
-                chart_df = pd.DataFrame(list(currency_split.items()), columns=["Currency", "Count"])
-                chart_df = chart_df.sort_values("Count", ascending=False)
-                st.bar_chart(chart_df.set_index("Currency"))
-            else:
-                st.info("No currency data")
+        st.markdown("")
 
-        # Processed data table
-        st.markdown(f"**Processed Data ({len(final_df)} records)**")
-        st.dataframe(final_df, use_container_width=True, height=400)
+        # Output preview
+        st.markdown(f"**Output — {len(final_df):,} records**")
+        st.dataframe(final_df, use_container_width=True, hide_index=True, height=350)
 
-        # Downloads
-        col_dl1, col_dl2, _ = st.columns([1, 1, 3])
+        # Export
+        st.markdown("")
+        col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 3])
         with col_dl1:
-            csv_data = final_df.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 Download CSV", csv_data, "processed_data.csv", "text/csv", use_container_width=True)
+            st.download_button(
+                "⬇️ Download CSV",
+                final_df.to_csv(index=False).encode("utf-8"),
+                "processed_data.csv",
+                "text/csv",
+                use_container_width=True,
+            )
         with col_dl2:
             buf = io.BytesIO()
             final_df.to_excel(buf, index=False, engine="openpyxl")
-            st.download_button("📥 Download XLSX", buf.getvalue(), "processed_data.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               use_container_width=True)
-    else:
-        st.info("👆 Upload a file and click **Process Data** to see results.")
+            st.download_button(
+                "⬇️ Download XLSX",
+                buf.getvalue(),
+                "processed_data.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
