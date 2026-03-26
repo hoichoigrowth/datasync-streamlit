@@ -152,12 +152,13 @@ def parse_file(uploaded_file):
     if df_raw.empty:
         return pd.DataFrame(), "File is empty"
 
-    # Find header row
-    header_idx = find_header_row(df_raw)
+    # Row 0 = junk → always delete it
+    # Row 1 = real headers → always use it
+    if len(df_raw) < 2:
+        return pd.DataFrame(), "File has fewer than 2 rows"
 
-    # Use that row as headers
-    headers = [normalize_col(v) for v in df_raw.iloc[header_idx]]
-    df = df_raw.iloc[header_idx + 1:].reset_index(drop=True)
+    headers = [normalize_col(v) for v in df_raw.iloc[1]]
+    df = df_raw.iloc[2:].reset_index(drop=True)
     df.columns = headers
 
     # Drop fully empty rows
