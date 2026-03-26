@@ -78,12 +78,13 @@ def is_internal(e):
     return lo.endswith("@hoichoi.tv") or lo.endswith("@hoichoitv.com")
 
 def digits_only(s):
-    return DIGITS_RE.sub("", str(s) if pd.notna(s) else "")
+    return DIGITS_RE.sub("", "" if s is None else str(s))
 
 def phone_to_int_str(val):
-    if pd.isna(val) or str(val).strip() == "":
+    # Convert to string first — avoids pd.isna() blowing up on newer pandas
+    s = "" if val is None else str(val).strip()
+    if s == "" or s.lower() == "nan":
         return ""
-    s = str(val).strip()
     try:
         n = float(s)
         if np.isnan(n) or np.isinf(n):
